@@ -33,6 +33,7 @@ class TetrisGame extends Phaser.Scene {
         this.cursors = this.input.keyboard.createCursorKeys();
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this.sKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+        this.cKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C); // Add C key
 
         this.inputTimer = this.time.addEvent({
             delay: 40, //ms
@@ -51,7 +52,7 @@ class TetrisGame extends Phaser.Scene {
         // Request initial game state from server
         socket.emit('requestInitialState');
         socket.on('gameState', (playerState) => {
-            // 更新當前玩家的遊戲狀態
+            // Update the current player's game state
             this.grid = playerState.grid;
             this.currentPiece = playerState.currentPiece;
             this.score = playerState.score;
@@ -75,12 +76,13 @@ class TetrisGame extends Phaser.Scene {
             socket.emit('dropToBottom');
         }
 
-        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-            socket.emit('dropToBottom');
-        }
-
         // Check if 'S' is pressed to save or swap the piece
         if (Phaser.Input.Keyboard.JustDown(this.sKey)) {
+            this.saveOrSwapPiece();
+        }
+
+        // Check if 'C' is pressed to save or swap the piece
+        if (Phaser.Input.Keyboard.JustDown(this.cKey)) {
             this.saveOrSwapPiece();
         }
     }
@@ -163,20 +165,6 @@ class TetrisGame extends Phaser.Scene {
         socket.emit('dropPiece');
     }
 
-    // updateGameState(gameState) {
-    //     this.grid = gameState.grid;
-    //     this.currentPiece = gameState.currentPiece;
-    //     this.score = gameState.score;
-
-    //     if (this.scoreText) {
-    //         this.scoreText.setText(`Score: ${this.score}`);
-    //     } else {
-    //         console.error('scoreText is not defined');
-    //     }
-
-    //     this.drawGrid();
-    // }
-
     drawGrid() {
         if (this.gridGraphics) {
             this.gridGraphics.clear();
@@ -228,39 +216,37 @@ class TetrisGame extends Phaser.Scene {
                 });
             });
         }
+
+
     }
-
-
-
     calculateShadowPiece() {
-        // Clone the current piece
-        const shadowPiece = {
-            shape: this.currentPiece.shape,
-            x: this.currentPiece.x,
-            y: this.currentPiece.y
-        };
+        const shadowPiece = { ...this.currentPiece };
 
-        // Move the shadow piece down until it collides
         while (!this.checkCollision(shadowPiece)) {
             shadowPiece.y++;
         }
 
-        // Move it back up one position because it collided
-        shadowPiece.y--;
+        shadowPiece.y--; // Move it back up one row
 
         return shadowPiece;
     }
 
     checkCollision(piece) {
-        return piece.shape.some((row, y) =>
-            row.some((cell, x) =>
-                cell &&
-                (piece.x + x < 0 ||
-                    piece.x + x >= this.gridWidth ||
-                    piece.y + y >= this.gridHeight ||
-                    this.grid[piece.y + y][piece.x + x])
-            )
-        );
+        return piece.shape.some((row, y) => {
+            return row.some((cell, x) => {
+                if (cell) {
+                    const newX = piece.x + x;
+                    const newY = piece.y + y;
+                    return (
+                        newX < 0 ||
+                        newX >= this.gridWidth ||
+                        newY >= this.gridHeight ||
+                        this.grid[newY] && this.grid[newY][newX]
+                    );
+                }
+                return false;
+            });
+        });
     }
 
     gameOver() {
@@ -270,17 +256,6 @@ class TetrisGame extends Phaser.Scene {
     }
 }
 
-const config = {
-    type: Phaser.AUTO,
-    width: 300,
-    height: 600,
-    parent: 'game-container',
-    scene: TetrisGame
-};
+const config = { type: Phaser.AUTO, width: 300, height: 600, scene: TetrisGame };
 
 const game = new Phaser.Game(config);
-
-socket.on('leaderboard', (scores) => {
-    console.log('Leaderboard:', scores);
-});
-
