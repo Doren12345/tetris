@@ -15,8 +15,7 @@ class TetrisGame extends Phaser.Scene {
         this.blockSize = 30;
 
         this.grid = Array(this.gridHeight).fill().map(() => Array(this.gridWidth).fill(null));
-
-        this.currentPiece = this.createPiece();
+        this.currentPiece = null;
         this.drawGrid();
 
         this.score = 0;
@@ -24,8 +23,9 @@ class TetrisGame extends Phaser.Scene {
 
         this.cursors = this.input.keyboard.createCursorKeys();
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
         this.inputTimer = this.time.addEvent({
-            delay: 20, //ms
+            delay: 40, //ms
             callback: this.handleInput,
             callbackScope: this,
             loop: true
@@ -33,48 +33,71 @@ class TetrisGame extends Phaser.Scene {
 
         this.dropTimer = this.time.addEvent({
             delay: 1000,
-            callback: this.dropPiece,
+            callback: this.sendDropPiece,
             callbackScope: this,
             loop: true
+        });
+
+        // Request initial game state from server
+        socket.emit('requestInitialState');
+        socket.on('gameState', (playerState) => {
+            // 更新當前玩家的遊戲狀態
+            this.grid = playerState.grid;
+            this.currentPiece = playerState.currentPiece;
+            this.score = playerState.score;
+
+            if (this.scoreText) {
+                this.scoreText.setText(`Score: ${this.score}`);
+            } else {
+                console.error('scoreText is not defined');
+            }
+
+            this.drawGrid();
+        });
+        socket.on('gameOver', (score) => {
+            console.log('Game Over received with score:', score);
+            this.gameOver();
         });
     }
 
     update() {
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-            this.dropToBottom();
+            socket.emit('dropToBottom');
         }
     }
 
     handleInput() {
         if (this.cursors.left.isDown) {
-            this.movePiece(-1);
+            socket.emit('movePiece', -1);
         }
         if (this.cursors.right.isDown) {
-            this.movePiece(1);
+            socket.emit('movePiece', 1);
         }
         if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
-            this.rotatePiece();
+            socket.emit('rotatePiece');
         }
         if (this.cursors.down.isDown) {
-            this.dropPiece();
+            socket.emit('dropPiece');
         }
     }
 
-    createPiece() {
-        const pieces = [
-            [[1,1,1,1]],
-            [[1,1],[1,1]],
-            [[1,1,1],[0,1,0]],
-            [[1,1,1],[1,0,0]],
-            [[1,1,1],[0,0,1]],
-            [[1,1,0],[0,1,1]],
-            [[0,1,1],[1,1,0]]
-        ];
-        const piece = Phaser.Utils.Array.GetRandom(pieces);
-        const x = Math.floor(this.gridWidth / 2) - Math.floor(piece[0].length / 2);
-        const y = 0;
-        return { shape: piece, x, y };
+    sendDropPiece() {
+        socket.emit('dropPiece');
     }
+
+    // updateGameState(gameState) {
+    //     this.grid = gameState.grid;
+    //     this.currentPiece = gameState.currentPiece;
+    //     this.score = gameState.score;
+
+    //     if (this.scoreText) {
+    //         this.scoreText.setText(`Score: ${this.score}`);
+    //     } else {
+    //         console.error('scoreText is not defined');
+    //     }
+
+    //     this.drawGrid();
+    // }
 
     drawGrid() {
         if (this.gridGraphics) {
@@ -86,117 +109,80 @@ class TetrisGame extends Phaser.Scene {
         // Draw the grid
         for (let y = 0; y < this.gridHeight; y++) {
             for (let x = 0; x < this.gridWidth; x++) {
-                if (this.grid[y][x]) {
-                    this.gridGraphics.fillStyle(0xFFFFFF);
+                const cell = this.grid[y][x];
+                if (cell) {
+                    this.gridGraphics.fillStyle(cell.color || 0xFFFFFF); // Use the cell color
                     this.gridGraphics.fillRect(x * this.blockSize, y * this.blockSize, this.blockSize - 1, this.blockSize - 1);
                 }
             }
         }
 
-        // Draw the current piece
-        this.gridGraphics.fillStyle(0xFFFF00);
-        this.currentPiece.shape.forEach((row, y) => {
-            row.forEach((cell, x) => {
-                if (cell) {
-                    this.gridGraphics.fillRect(
-                        (this.currentPiece.x + x) * this.blockSize,
-                        (this.currentPiece.y + y) * this.blockSize,
-                        this.blockSize - 1,
-                        this.blockSize - 1
-                    );
-                }
+        // Draw the shadow (ghost) piece
+        if (this.currentPiece) {
+            const shadowPiece = this.calculateShadowPiece();
+
+            this.gridGraphics.fillStyle(0xAAAAAA, 0.5); // Light grey with high transparency
+            shadowPiece.shape.forEach((row, y) => {
+                row.forEach((cell, x) => {
+                    if (cell) {
+                        this.gridGraphics.fillRect(
+                            (shadowPiece.x + x) * this.blockSize,
+                            (shadowPiece.y + y) * this.blockSize,
+                            this.blockSize - 1,
+                            this.blockSize - 1
+                        );
+                    }
+                });
             });
-        });
-    }
 
-    movePiece(direction) {
-        this.currentPiece.x += direction;
-        if (this.checkCollision()) {
-            this.currentPiece.x -= direction;
-        } else {
-            this.drawGrid();
+            // Draw the current piece
+            this.gridGraphics.fillStyle(this.currentPiece.color); // Use the color of the current piece
+            this.currentPiece.shape.forEach((row, y) => {
+                row.forEach((cell, x) => {
+                    if (cell) {
+                        this.gridGraphics.fillRect(
+                            (this.currentPiece.x + x) * this.blockSize,
+                            (this.currentPiece.y + y) * this.blockSize,
+                            this.blockSize - 1,
+                            this.blockSize - 1
+                        );
+                    }
+                });
+            });
         }
     }
 
-    rotatePiece() {
-        const rotated = this.currentPiece.shape[0].map((_, index) =>
-            this.currentPiece.shape.map(row => row[index]).reverse()
-        );
-        const previousShape = this.currentPiece.shape;
-        this.currentPiece.shape = rotated;
-        if (this.checkCollision()) {
-            this.currentPiece.shape = previousShape;
-        } else {
-            this.drawGrid();
+
+
+    calculateShadowPiece() {
+        // Clone the current piece
+        const shadowPiece = {
+            shape: this.currentPiece.shape,
+            x: this.currentPiece.x,
+            y: this.currentPiece.y
+        };
+
+        // Move the shadow piece down until it collides
+        while (!this.checkCollision(shadowPiece)) {
+            shadowPiece.y++;
         }
+
+        // Move it back up one position because it collided
+        shadowPiece.y--;
+
+        return shadowPiece;
     }
 
-    dropPiece() {
-        this.currentPiece.y++;
-        if (this.checkCollision()) {
-            this.currentPiece.y--;
-            this.lockPiece();
-            this.clearLines();
-            this.currentPiece = this.createPiece();
-            if (this.checkCollision()) {
-                this.gameOver();
-            }
-        }
-        this.drawGrid();
-    }
-
-    dropToBottom() {
-        while (!this.checkCollision()) {
-            this.currentPiece.y++;
-        }
-        this.currentPiece.y--;
-        this.lockPiece();
-        this.clearLines();
-        this.currentPiece = this.createPiece();
-        if (this.checkCollision()) {
-            this.gameOver();
-        }
-        this.drawGrid();
-    }
-
-    checkCollision() {
-        return this.currentPiece.shape.some((row, y) =>
+    checkCollision(piece) {
+        return piece.shape.some((row, y) =>
             row.some((cell, x) =>
-                cell && (
-                    this.currentPiece.x + x < 0 ||
-                    this.currentPiece.x + x >= this.gridWidth ||
-                    this.currentPiece.y + y >= this.gridHeight ||
-                    (this.grid[this.currentPiece.y + y] && this.grid[this.currentPiece.y + y][this.currentPiece.x + x])
-                )
+                cell &&
+                (piece.x + x < 0 ||
+                    piece.x + x >= this.gridWidth ||
+                    piece.y + y >= this.gridHeight ||
+                    this.grid[piece.y + y][piece.x + x])
             )
         );
-    }
-
-    lockPiece() {
-        this.currentPiece.shape.forEach((row, y) => {
-            row.forEach((cell, x) => {
-                if (cell) {
-                    this.grid[this.currentPiece.y + y][this.currentPiece.x + x] = 1;
-                }
-            });
-        });
-    }
-
-    clearLines() {
-        let linesCleared = 0;
-        for (let y = this.gridHeight - 1; y >= 0; y--) {
-            if (this.grid[y].every(cell => cell)) {
-                this.grid.splice(y, 1);
-                this.grid.unshift(Array(this.gridWidth).fill(null));
-                linesCleared++;
-                y++;
-            }
-        }
-        if (linesCleared > 0) {
-            this.score += linesCleared * 100;
-            this.scoreText.setText(`Score: ${this.score}`);
-            socket.emit('updateScore', this.score);
-        }
     }
 
     gameOver() {
@@ -219,3 +205,4 @@ const game = new Phaser.Game(config);
 socket.on('leaderboard', (scores) => {
     console.log('Leaderboard:', scores);
 });
+
