@@ -21,8 +21,18 @@ class TetrisGame extends Phaser.Scene {
         this.score = 0;
         this.scoreText = this.add.text(10, 10, `Score: ${this.score}`, { fontSize: '18px', fill: '#fff' });
 
+        this.savedPiece = null; // Variable to store the saved piece
+        this.savedPieceGraphics = this.add.graphics(); // Graphics object to draw the saved piece
+
+        // Draw the saved piece area
+        this.savedPieceArea = this.add.graphics();
+        this.savedPieceArea.fillStyle(0xCCCCCC, 0.5);
+        this.savedPieceArea.fillRect(10, 10, this.blockSize * 4, this.blockSize * 4); // Adjust size as needed
+        this.savedPieceArea.strokeRect(10, 10, this.blockSize * 4, this.blockSize * 4); // Outline the area
+
         this.cursors = this.input.keyboard.createCursorKeys();
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        this.sKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
 
         this.inputTimer = this.time.addEvent({
             delay: 40, //ms
@@ -63,6 +73,74 @@ class TetrisGame extends Phaser.Scene {
     update() {
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
             socket.emit('dropToBottom');
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            socket.emit('dropToBottom');
+        }
+
+        // Check if 'S' is pressed to save or swap the piece
+        if (Phaser.Input.Keyboard.JustDown(this.sKey)) {
+            this.saveOrSwapPiece();
+        }
+    }
+
+    saveOrSwapPiece() {
+        // If there is a saved piece, swap it with the current piece
+        if (this.savedPiece) {
+            const temp = this.currentPiece;
+            this.currentPiece = this.savedPiece;
+            this.savedPiece = temp;
+        } else {
+            // Save the current piece and generate a new piece
+            this.savedPiece = this.currentPiece;
+            this.currentPiece = this.generateNewPiece(); // Ensure this method exists and generates a new piece
+        }
+
+        // Emit the updated state to the server
+        socket.emit('updatePiece', {
+            currentPiece: this.currentPiece,
+            savedPiece: this.savedPiece
+        });
+
+        // Redraw the grid and saved piece display
+        this.drawGrid();
+        this.drawSavedPiece();
+    }
+
+    generateNewPiece() {
+        const pieces = [
+            { shape: [[1, 1, 1, 1]], color: 0x87CEFA }, // I
+            { shape: [[1, 1], [1, 1]], color: 0xFFFF00 }, // O
+            { shape: [[1, 1, 1], [0, 1, 0]], color: 0x800080 }, // T
+            { shape: [[1, 1, 1], [1, 0, 0]], color: 0xFFA500 }, // L
+            { shape: [[1, 1, 1], [0, 0, 1]], color: 0x0000FF }, // J
+            { shape: [[1, 1, 0], [0, 1, 1]], color: 0x00FF00 }, // S
+            { shape: [[0, 1, 1], [1, 1, 0]], color: 0xFF0000 }  // Z
+        ];
+        const piece = pieces[Math.floor(Math.random() * pieces.length)];
+        const x = Math.floor(this.gridWidth / 2) - Math.floor(piece.shape[0].length / 2);
+        const y = 0;
+        return { shape: piece.shape, x, y, color: piece.color };
+    }
+
+    drawSavedPiece() {
+        this.savedPieceGraphics.clear();
+
+        if (this.savedPiece) {
+            this.savedPieceGraphics.fillStyle(this.savedPiece.color); // Use the saved piece color
+            this.savedPiece.shape.forEach((row, y) => {
+                row.forEach((cell, x) => {
+                    if (cell) {
+                        this.savedPieceGraphics.fillRect(
+                            15 + x * this.blockSize, // Position within the saved piece area
+                            15 + y * this.blockSize, // Position within the saved piece area
+                            this.blockSize - 1,
+                            this.blockSize - 1
+                        );
+                    }
+                });
+            });
         }
     }
 

@@ -119,6 +119,25 @@ function dropPiece(socket) {
     socket.emit('gameState', playerState);
 }
 
+function createPiece(playerId) {
+    const pieces = [
+        { shape: [[1, 1, 1, 1]], color: 0x87CEFA }, // I (light blue)
+        { shape: [[1, 1], [1, 1]], color: 0xFFFF00 }, // O (yellow)
+        { shape: [[1, 1, 1], [0, 1, 0]], color: 0x800080 }, // T (purple)
+        { shape: [[1, 1, 1], [1, 0, 0]], color: 0xFFA500 }, // L (orange)
+        { shape: [[1, 1, 1], [0, 0, 1]], color: 0x0000FF }, // J (blue)
+        { shape: [[1, 1, 0], [0, 1, 1]], color: 0x00FF00 }, // S (green)
+        { shape: [[0, 1, 1], [1, 1, 0]], color: 0xFF0000 }  // Z (red)
+    ];
+    const piece = pieces[Math.floor(Math.random() * pieces.length)];
+    const x = Math.floor(gameState.gridWidth / 2) - Math.floor(piece.shape[0].length / 2);
+    const y = 0;
+    const newPiece = { shape: piece.shape, x, y, color: piece.color };
+
+    return newPiece;
+}
+
+
 io.on('connection', (socket) => {
     console.log('A user connected');
 
@@ -141,6 +160,15 @@ io.on('connection', (socket) => {
             playerState.currentPiece.x -= direction;
         }
         socket.emit('gameState', playerState);
+    });
+
+    socket.on('updatePiece', ({ currentPiece, savedPiece }) => {
+        const playerState = gameState.players[socket.id];
+        if (playerState) {
+            playerState.currentPiece = currentPiece;
+            playerState.savedPiece = savedPiece;
+            socket.emit('gameState', playerState);
+        }
     });
 
     socket.on('rotatePiece', () => {
